@@ -1,5 +1,4 @@
 use std::{
-    f32::INFINITY,
     mem,
     sync::mpsc::{channel, Receiver, Sender},
     thread::{self, JoinHandle},
@@ -11,7 +10,7 @@ use threadpool::ThreadPool;
 use tree::Branch;
 
 pub mod heuristics;
-mod tree;
+pub mod tree;
 
 #[derive(Debug, PartialEq)]
 enum Command {
@@ -104,7 +103,7 @@ impl Engine {
         let maximize = self.branch.board.side_to_move() == Colour::White;
         println!("Began search");
         let start = SystemTime::now();
-        self.branch.run_node(4, maximize);
+        self.branch.run_node(3, maximize);
         let best = self.branch.get_best(maximize);
         let eval = best.eval;
         self.selected = Some(best);

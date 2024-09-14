@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 chess_backend = { path = "../chess_backend" }
+num_cpus = "1.16.0"
 rand = "0.8.5"
 threadpool = "1.8.1"

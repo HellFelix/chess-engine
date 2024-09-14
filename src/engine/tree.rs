@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, f32::INFINITY, fmt::Display};
+use std::cmp::Ordering;
 
 use chess_backend::{Board, Colour};
 
@@ -119,6 +119,7 @@ pub struct Branch {
     pub board: Board,
     pub eval: Option<Eval>,
     pub children: Vec<Branch>,
+    pub is_terminal: bool,
 }
 impl Branch {
     pub fn populate(&mut self) {
@@ -142,6 +143,7 @@ impl Branch {
         if current_depth == desired_depth || self.children.len() == 0 {
             let eval = eval_position(&self.board, self.children.len(), current_depth);
             self.eval = Some(eval);
+            self.is_terminal = true;
             return eval;
         }
 
@@ -177,10 +179,37 @@ impl Branch {
     }
 
     pub fn run_node(&mut self, depth: usize, maximize: bool) {
+        self.is_terminal = false;
         self.simple_alpha_beta(0, depth, Eval::NegInfinity, Eval::Infinity, maximize);
     }
 
-    pub fn get_best(&self, maximize: bool) -> Branch {
+    // Doesn't evaluate positions, simply rearanges with new information
+    pub fn simple_minimax(&mut self, maximize: bool) -> Eval {
+        if self.is_terminal {
+            // Unwrap should be safe. All terminal nodes have been evaluated
+            self.eval.unwrap()
+        } else if maximize {
+            let mut max_eval = Eval::NegInfinity;
+            for child in &mut self.children {
+                let eval = child.simple_minimax(false);
+                max_eval = max_eval.max(eval);
+                self.eval = Some(max_eval);
+            }
+            max_eval
+        } else {
+            let mut min_eval = Eval::Infinity;
+            for child in &mut self.children {
+                let eval = child.simple_minimax(true);
+                min_eval = min_eval.min(eval);
+                self.eval = Some(min_eval);
+            }
+            min_eval
+        }
+    }
+
+    pub fn get_best(&mut self, maximize: bool) -> Branch {
+        // fix tree after expanded search
+        self.simple_minimax(maximize);
         if maximize {
             self.children
                 .iter()
@@ -196,6 +225,14 @@ impl Branch {
         }
     }
 
+    pub fn insert_branch(&mut self, input_branch: Branch, location: &[usize]) {
+        if location.len() == 0 {
+            *self = input_branch;
+        } else {
+            self.children[location[0]].insert_branch(input_branch, &location[1..]);
+        }
+    }
+
     pub fn show_branch(&self, depth: usize) {
         for _ in 0..depth {
             print!("|   ");
@@ -208,13 +245,13 @@ impl Branch {
         }
     }
 }
-
 impl From<Board> for Branch {
     fn from(value: Board) -> Self {
         Self {
             board: value,
             eval: None,
             children: Vec::new(),
+            is_terminal: false,
         }
     }
 }

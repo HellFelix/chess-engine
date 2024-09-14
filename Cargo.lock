@@ -134,6 +134,7 @@ name = "chess_engine"
 version = "0.1.0"
 dependencies = [
  "chess_backend",
+ "num_cpus",
  "rand",
  "threadpool",
 ]

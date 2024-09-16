@@ -76,6 +76,7 @@ impl EngineController {
         if let Some(e) = &mut self.engine {
             e.branch = answer;
             e.selected = None;
+            (e.sender_model, e.receiver) = channel();
         }
     }
 }
@@ -85,35 +86,39 @@ pub struct Engine {
     branch: Branch,
     selected: Option<Branch>,
     workers: ThreadPool,
-    active_receivers: Vec<Receiver<(Branch, Vec<usize>)>>,
+    sender_model: Sender<(Branch, Vec<usize>, Vec<usize>)>,
+    receiver: Receiver<(Branch, Vec<usize>, Vec<usize>)>,
 }
 impl Engine {
     pub fn init() {
         chess_backend::init();
     }
     pub fn new(board: Board, n_workers: usize) -> Self {
+        let (sender_model, receiver) = channel();
         Self {
             branch: Branch::from(board),
             selected: None,
             workers: ThreadPool::new(n_workers),
-            active_receivers: Vec::new(),
+            sender_model,
+            receiver,
         }
     }
     pub fn get_current(&self) -> Board {
         self.branch.board
     }
     fn search(&mut self, rx: Receiver<Command>) {
-        self.add_job(self.branch.clone(), vec![]);
+        self.add_job(vec![]);
+        let mut i = 0;
         while rx.try_recv().is_err() {
-            for receiver in &self.active_receivers {
-                if let Ok((res_branch, location)) = receiver.try_recv() {
-                    self.branch.insert_branch(res_branch, location.as_slice());
-                }
+            for (res_branch, location, next_location) in self.receiver.try_iter() {
+                self.branch.insert_branch(res_branch, location.as_slice());
+                self.add_job(next_location);
             }
         }
 
         // When an answer has been demanded, let the current threads finish
         self.workers.join();
+        thread::sleep(Duration::from_secs(1));
         // Then choose the best branch from the explored tree
         let start = SystemTime::now();
         let best = self
@@ -123,24 +128,26 @@ impl Engine {
         println!("Fixing took {}us", stop.as_micros());
         self.selected = Some(best);
     }
-    fn add_job(&mut self, mut node: Branch, location: Vec<usize>) {
-        let (tx, rx) = channel();
-        self.active_receivers.push(rx);
+    fn add_job(&self, location: Vec<usize>) {
+        let tx = self.sender_model.clone();
+        let mut node = self.branch.find_branch(&location.as_slice()).clone();
         self.workers.execute(move || {
             let maximize = node.board.side_to_move() == Colour::White;
-            node.run_node(3, maximize);
-            let best = node.get_best(maximize);
-            tx.send((node, location));
+            let next_location = node.run_node(3, location.as_slice(), maximize);
+            tx.send((node, location.clone(), next_location))
+                .expect("Failed to send finished branch");
         });
     }
 }
 impl Default for Engine {
     fn default() -> Self {
+        let (sender_model, receiver) = channel();
         Self {
             branch: Branch::from(Board::default()),
             selected: None,
             workers: ThreadPool::default(),
-            active_receivers: Vec::new(),
+            sender_model,
+            receiver,
         }
     }
 }

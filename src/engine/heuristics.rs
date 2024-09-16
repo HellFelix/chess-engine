@@ -1,4 +1,4 @@
-use chess_backend::{Board, Colour, FinishedState, GameState, Piece, Pieces};
+use chess_backend::{Board, Colour, FinishedState, GameState, Pieces};
 
 use super::tree::Eval;
 
@@ -16,19 +16,22 @@ pub fn eval_position(board: &Board, mobility: usize, depth: usize) -> Eval {
     }
 }
 
-fn eval_heuristic(board: &Board, mobility: usize) -> Eval {
-    let mut res = 0.;
-
-    res +=
-        eval_pieces(Pieces::from(board.base.white)) - eval_pieces(Pieces::from(board.base.black));
-    Eval::Numeric(res)
-}
-
+const MOBILITY_MOD: f32 = 0.1;
+// Piece values
 const PAWN_VAL: f32 = 1.;
 const KNIGHT_VAL: f32 = 3.;
 const BISHOP_VAL: f32 = 3.;
 const ROOK_VAL: f32 = 5.;
 const QUEEN_VAL: f32 = 9.;
+
+fn eval_heuristic(board: &Board, mobility: usize) -> Eval {
+    let mut res = 0.;
+
+    res +=
+        eval_pieces(Pieces::from(board.base.white)) - eval_pieces(Pieces::from(board.base.black));
+
+    Eval::Numeric(res)
+}
 
 fn eval_pieces(pieces: Pieces) -> f32 {
     PAWN_VAL * pieces.pawns.len() as f32

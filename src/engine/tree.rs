@@ -131,56 +131,90 @@ impl Branch {
             .collect();
     }
 
-    fn simple_alpha_beta(
-        &mut self,
+    fn simple_alpha_beta<'a, 'b: 'a>(
+        &'b mut self,
         current_depth: usize,
         desired_depth: usize,
+        current_location: &'a [usize],
         alpha: Eval,
         beta: Eval,
         maximize: bool,
-    ) -> Eval {
+    ) -> (Eval, Vec<usize>) {
         self.populate();
         if current_depth == desired_depth || self.children.len() == 0 {
             let eval = eval_position(&self.board, self.children.len(), current_depth);
             self.eval = Some(eval);
             self.is_terminal = true;
-            return eval;
+            return (eval, current_location.into());
         }
 
         if maximize {
             let mut max_eval = Eval::NegInfinity;
+            let mut max_location = Vec::new();
             let mut alpha = alpha;
-            for child in &mut self.children {
-                let eval =
-                    child.simple_alpha_beta(current_depth + 1, desired_depth, alpha, beta, false);
-                max_eval = max_eval.max(eval);
-                self.eval = Some(max_eval);
+            for (relative_location, child) in &mut self.children.iter_mut().enumerate() {
+                let (eval, inherited_location) = child.simple_alpha_beta(
+                    current_depth + 1,
+                    desired_depth,
+                    &[current_location, &[relative_location]].concat(),
+                    alpha,
+                    beta,
+                    false,
+                );
+                if eval > max_eval {
+                    max_eval = eval;
+                    max_location = inherited_location.clone();
+                    self.eval = Some(max_eval);
+                }
                 alpha = alpha.max(eval);
                 if beta < alpha {
                     break;
                 }
             }
-            max_eval
+            (max_eval, max_location)
         } else {
             let mut min_eval = Eval::Infinity;
+            let mut min_location = Vec::new();
             let mut beta = beta;
-            for child in &mut self.children {
-                let eval =
-                    child.simple_alpha_beta(current_depth + 1, desired_depth, alpha, beta, true);
-                min_eval = min_eval.min(eval);
-                self.eval = Some(min_eval);
+            for (relative_location, child) in &mut self.children.iter_mut().enumerate() {
+                let (eval, inherited_location) = child.simple_alpha_beta(
+                    current_depth + 1,
+                    desired_depth,
+                    &[current_location, &[relative_location]].concat(),
+                    alpha,
+                    beta,
+                    true,
+                );
+                if eval < min_eval {
+                    min_eval = eval;
+                    min_location = inherited_location.clone();
+                    self.eval = Some(min_eval);
+                }
                 beta = beta.min(eval);
                 if beta < alpha {
                     break;
                 }
             }
-            min_eval
+            (min_eval, min_location)
         }
     }
 
-    pub fn run_node(&mut self, depth: usize, maximize: bool) {
+    pub fn run_node<'a>(
+        &'a mut self,
+        depth: usize,
+        location: &'a [usize],
+        maximize: bool,
+    ) -> Vec<usize> {
         self.is_terminal = false;
-        self.simple_alpha_beta(0, depth, Eval::NegInfinity, Eval::Infinity, maximize);
+        self.simple_alpha_beta(
+            0,
+            depth,
+            location,
+            Eval::NegInfinity,
+            Eval::Infinity,
+            maximize,
+        )
+        .1
     }
 
     // Doesn't evaluate positions, simply rearanges with new information
@@ -222,6 +256,14 @@ impl Branch {
                 .min_by(|c1, c2| c1.eval.partial_cmp(&c2.eval).unwrap())
                 .unwrap()
                 .clone()
+        }
+    }
+
+    pub fn find_branch(&self, location: &[usize]) -> &Self {
+        if location.len() == 0 {
+            self
+        } else {
+            self.children[location[0]].find_branch(&location[1..])
         }
     }
 

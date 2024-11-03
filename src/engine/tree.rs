@@ -1,4 +1,7 @@
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    ops::{Add, Sub},
+};
 
 use chess_backend::{Board, Colour};
 
@@ -28,6 +31,42 @@ impl Eval {
         }
     }
 }
+impl Add for Eval {
+    type Output = Option<Self>;
+    fn add(self, rhs: Self) -> Self::Output {
+        if let Self::Numeric(n1) = self {
+            if let Self::Numeric(n2) = rhs {
+                return Some(Self::Numeric(n1 + n2));
+            }
+        }
+        None
+    }
+}
+impl Add<f32> for Eval {
+    type Output = Option<Self>;
+    fn add(self, rhs: f32) -> Self::Output {
+        self + Self::Numeric(rhs)
+    }
+}
+
+impl Sub for Eval {
+    type Output = Option<Self>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        if let Self::Numeric(n1) = self {
+            if let Self::Numeric(n2) = rhs {
+                return Some(Self::Numeric(n1 - n2));
+            }
+        }
+        None
+    }
+}
+impl Sub<f32> for Eval {
+    type Output = Option<Self>;
+    fn sub(self, rhs: f32) -> Self::Output {
+        self - Self::Numeric(rhs)
+    }
+}
+
 impl PartialOrd for Eval {
     fn lt(&self, other: &Self) -> bool {
         !self.ge(other)
@@ -131,8 +170,8 @@ impl Branch {
             .collect();
     }
 
-    fn simple_alpha_beta<'a, 'b: 'a>(
-        &'b mut self,
+    fn simple_alpha_beta<'a>(
+        &'a mut self,
         current_depth: usize,
         desired_depth: usize,
         current_location: &'a [usize],
@@ -241,21 +280,17 @@ impl Branch {
         }
     }
 
-    pub fn get_best(&mut self, maximize: bool) -> Branch {
+    pub fn get_best(&mut self, maximize: bool) -> Option<&Branch> {
         // fix tree after expanded search
         self.simple_minimax(maximize);
         if maximize {
             self.children
                 .iter()
                 .max_by(|c1, c2| c1.eval.partial_cmp(&c2.eval).unwrap())
-                .unwrap()
-                .clone()
         } else {
             self.children
                 .iter()
                 .min_by(|c1, c2| c1.eval.partial_cmp(&c2.eval).unwrap())
-                .unwrap()
-                .clone()
         }
     }
 

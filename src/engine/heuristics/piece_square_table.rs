@@ -1,3 +1,4 @@
+use core::panic;
 use std::i32;
 
 use chess_backend::{Colour, Pieces};
@@ -11,6 +12,8 @@ pub fn positional_evaluation(colour: Colour, pieces: &Pieces, game_phase: GamePh
     };
 
     match game_phase {
+        GamePhase::Opening(_) => evaluate(conversion, pieces, 0), // TODO! Change this when opening
+        // book is implemented
         GamePhase::MiddleGame => evaluate(conversion, pieces, 0),
         GamePhase::EndGame => evaluate(conversion, pieces, 1),
     }

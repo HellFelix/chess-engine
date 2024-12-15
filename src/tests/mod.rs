@@ -59,7 +59,7 @@ mod move_gen {
 
 #[cfg(test)]
 mod eval {
-    use crate::engine::tree::Eval;
+    use crate::engine::utils::eval::Eval;
     use chess_backend::Colour;
 
     #[test]
@@ -122,3 +122,6 @@ mod eval {
 
 #[cfg(test)]
 mod engine;
+
+#[cfg(test)]
+mod san;

@@ -1,6 +1,5 @@
 use std::time::SystemTime;
 
-use crate::engine::heuristics::eval_position;
 use chess_backend::{init, Board, START_POSITION};
 
 #[test]

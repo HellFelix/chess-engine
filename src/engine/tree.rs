@@ -1,162 +1,15 @@
-use std::{
-    cmp::Ordering,
-    ops::{Add, Sub},
-};
+use std::mem;
 
-use chess_backend::{Board, Colour};
+use chess_backend::Board;
 
-use super::heuristics::eval_position;
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Eval {
-    Numeric(f32),
-    Mate(usize, Colour),
-    Infinity,
-    NegInfinity,
-}
-impl Eval {
-    pub fn max(self, other: Self) -> Self {
-        if self >= other {
-            self
-        } else {
-            other
-        }
-    }
-
-    pub fn min(self, other: Self) -> Self {
-        if self <= other {
-            self
-        } else {
-            other
-        }
-    }
-}
-impl Add for Eval {
-    type Output = Option<Self>;
-    fn add(self, rhs: Self) -> Self::Output {
-        if let Self::Numeric(n1) = self {
-            if let Self::Numeric(n2) = rhs {
-                return Some(Self::Numeric(n1 + n2));
-            }
-        }
-        None
-    }
-}
-impl Add<f32> for Eval {
-    type Output = Option<Self>;
-    fn add(self, rhs: f32) -> Self::Output {
-        self + Self::Numeric(rhs)
-    }
-}
-
-impl Sub for Eval {
-    type Output = Option<Self>;
-    fn sub(self, rhs: Self) -> Self::Output {
-        if let Self::Numeric(n1) = self {
-            if let Self::Numeric(n2) = rhs {
-                return Some(Self::Numeric(n1 - n2));
-            }
-        }
-        None
-    }
-}
-impl Sub<f32> for Eval {
-    type Output = Option<Self>;
-    fn sub(self, rhs: f32) -> Self::Output {
-        self - Self::Numeric(rhs)
-    }
-}
-
-impl PartialOrd for Eval {
-    fn lt(&self, other: &Self) -> bool {
-        !self.ge(other)
-    }
-    fn le(&self, other: &Self) -> bool {
-        !self.gt(other)
-    }
-    fn gt(&self, other: &Self) -> bool {
-        match self {
-            Self::Numeric(val_self) => match other {
-                Self::Numeric(val_other) => val_self > val_other,
-                Self::Mate(_, c) => match c {
-                    Colour::White => false,
-                    Colour::Black => true,
-                },
-                Self::Infinity => false,
-                Self::NegInfinity => true,
-            },
-            Self::Mate(mate_self, c1) => match other {
-                Self::Numeric(_) => match c1 {
-                    Colour::White => true,
-                    Colour::Black => false,
-                },
-                Self::Mate(mate_other, c2) => match c1 {
-                    Colour::White => match c2 {
-                        Colour::White => mate_self < mate_other,
-                        Colour::Black => true,
-                    },
-                    Colour::Black => match c2 {
-                        Colour::White => false,
-                        Colour::Black => mate_self > mate_other,
-                    },
-                },
-                Self::Infinity => false,
-                Self::NegInfinity => true,
-            },
-            Self::Infinity => true,
-            Self::NegInfinity => false,
-        }
-    }
-    fn ge(&self, other: &Self) -> bool {
-        match self {
-            Self::Numeric(val_self) => match other {
-                Self::Numeric(val_other) => val_self >= val_other,
-                Self::Mate(_, c) => match c {
-                    Colour::White => false,
-                    Colour::Black => true,
-                },
-                Self::Infinity => false,
-                Self::NegInfinity => true,
-            },
-            Self::Mate(mate_self, c1) => match other {
-                Self::Numeric(_) => match c1 {
-                    Colour::White => true,
-                    Colour::Black => false,
-                },
-                Self::Mate(mate_other, c2) => match c1 {
-                    Colour::White => match c2 {
-                        Colour::White => mate_self <= mate_other,
-                        Colour::Black => true,
-                    },
-                    Colour::Black => match c2 {
-                        Colour::White => false,
-                        Colour::Black => mate_self >= mate_other,
-                    },
-                },
-                Self::Infinity => false,
-                Self::NegInfinity => true,
-            },
-            Self::Infinity => true,
-            Self::NegInfinity => false,
-        }
-    }
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self > other {
-            Some(Ordering::Greater)
-        } else if self < other {
-            Some(Ordering::Less)
-        } else if self == other {
-            Some(Ordering::Equal)
-        } else {
-            None
-        }
-    }
-}
+use crate::engine::utils::eval::Eval;
+use crate::engine::utils::phase::GamePhase;
 
 #[derive(Debug, Clone)]
 pub struct Branch {
     pub board: Board,
     pub eval: Option<Eval>,
+    pub phase: Option<GamePhase>,
     pub children: Vec<Branch>,
     pub is_terminal: bool,
 }
@@ -166,7 +19,7 @@ impl Branch {
             .board
             .generate_legal_moves()
             .iter()
-            .map(|m| Branch::from(m.board))
+            .map(|m| Branch::from_parent(m.board, self.phase))
             .collect();
     }
 
@@ -181,7 +34,7 @@ impl Branch {
     ) -> (Eval, Vec<usize>) {
         self.populate();
         if current_depth == desired_depth || self.children.len() == 0 {
-            let eval = eval_position(&self.board, self.children.len(), current_depth);
+            let eval = self.eval_position(self.children.len(), current_depth);
             self.eval = Some(eval);
             self.is_terminal = true;
             return (eval, current_location.into());
@@ -243,7 +96,7 @@ impl Branch {
         depth: usize,
         location: &'a [usize],
         maximize: bool,
-    ) -> Vec<usize> {
+    ) -> [Option<(Eval, Vec<usize>)>; 3] {
         self.is_terminal = false;
         self.simple_alpha_beta(
             0,
@@ -252,8 +105,51 @@ impl Branch {
             Eval::NegInfinity,
             Eval::Infinity,
             maximize,
-        )
-        .1
+        );
+        self.get_top_three(location, maximize)
+    }
+
+    pub fn get_top_three(
+        &self,
+        location: &[usize],
+        maximize: bool,
+    ) -> [Option<(Eval, Vec<usize>)>; 3] {
+        let mut top_three: [Option<(Eval, Vec<usize>)>; 3] = [None, None, None];
+        for (relative_location, child) in self.children.iter().enumerate() {
+            if let Some(eval) = child.eval {
+                if let Some(current_first_value) = top_three[0].clone() {
+                    if (maximize && eval > current_first_value.0)
+                        || (!maximize && eval < current_first_value.0)
+                    {
+                        top_three[2] = mem::take(&mut top_three[1]);
+                        top_three[1] = mem::take(&mut top_three[0]);
+                        top_three[0] = Some((eval, [location, &[relative_location]].concat()));
+                    } else if let Some(current_second_value) = top_three[1].clone() {
+                        if (maximize && eval > current_second_value.0)
+                            || (!maximize && eval < current_second_value.0)
+                        {
+                            top_three[2] = mem::take(&mut top_three[1]);
+                            top_three[1] = Some((eval, [location, &[relative_location]].concat()));
+                        } else if let Some(current_second_value) = top_three[2].clone() {
+                            if (maximize && eval > current_second_value.0)
+                                || (!maximize && eval < current_second_value.0)
+                            {
+                                top_three[2] =
+                                    Some((eval, [location, &[relative_location]].concat()));
+                            }
+                        } else {
+                            top_three[2] = Some((eval, [location, &[relative_location]].concat()));
+                        }
+                    } else {
+                        top_three[1] = Some((eval, [location, &[relative_location]].concat()));
+                    }
+                } else {
+                    top_three[0] = Some((eval, [location, &[relative_location]].concat()))
+                }
+            }
+        }
+
+        top_three
     }
 
     // Doesn't evaluate positions, simply rearanges with new information
@@ -321,12 +217,14 @@ impl Branch {
             }
         }
     }
-}
-impl From<Board> for Branch {
-    fn from(value: Board) -> Self {
+
+    /// Creates a new branch that should inherit the game phase from its parent.
+    /// If the phase is None, it will be determined at the next evaluation
+    pub fn from_parent(board: Board, parent_phase: Option<GamePhase>) -> Self {
         Self {
-            board: value,
+            board,
             eval: None,
+            phase: parent_phase,
             children: Vec::new(),
             is_terminal: false,
         }
